@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Inventory Scanner</title>
+
+  <!-- ZXing barcode scanning library — cached by browser after first load -->
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #1c2128;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --accent:   #238636;
+      --accentH:  #2ea043;
+      --danger:   #da3633;
+      --dangerH:  #f85149;
+      --warn:     #d29922;
+      --blue:     #1f6feb;
+      --blueH:    #58a6ff;
+      --r:        10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.25rem 1rem 4rem;
+    }
+
+    /* ── Header ───────────────────────────────── */
+    header {
+      width: 100%; max-width: 540px;
+      display: flex; align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; }
+
+    .logo {
+      width: 34px; height: 34px;
+      background: var(--accent);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo svg { width: 18px; height: 18px; fill: #fff; }
+
+    .brand h1 { font-size: 15px; font-weight: 600; line-height: 1.2; }
+    .brand p  { font-size: 11px; color: var(--muted); }
+
+    .badge {
+      font-size: 11px; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px;
+      background: #0d2a10; color: var(--accentH);
+      border: 1px solid var(--accent);
+      white-space: nowrap;
+    }
+
+    /* ── Card ─────────────────────────────────── */
+    .card {
+      width: 100%; max-width: 540px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      margin-bottom: .875rem;
+    }
+
+    .card-hdr {
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase; letter-spacing: .07em;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--border); flex-shrink: 0;
+      transition: background .3s, box-shadow .3s;
+    }
+    .dot.on { background: var(--accentH); box-shadow: 0 0 5px var(--accentH); }
+
+    .card-body { padding: 16px; }
+
+    /* ── Video / camera ───────────────────────── */
+    .vid-wrap {
+      position: relative; width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border-radius: 7px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .scan-line {
+      display: none; position: absolute;
+      left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accentH), transparent);
+      animation: sweep 2s linear infinite;
+    }
+    @keyframes sweep { 0%{top:8%} 100%{top:92%} }
+
+    .corners { display: none; position: absolute; inset: 0; pointer-events: none; }
+    .corners::before, .corners::after,
+    .corners span::before, .corners span::after {
+      content: ''; position: absolute;
+      width: 24px; height: 24px;
+      border-color: var(--accentH); border-style: solid; opacity: .9;
+    }
+    .corners::before       { top:10%;    left:6%;   border-width: 2px 0 0 2px; }
+    .corners::after        { top:10%;    right:6%;  border-width: 2px 2px 0 0; }
+    .corners span::before  { bottom:10%; left:6%;   border-width: 0 0 2px 2px; }
+    .corners span::after   { bottom:10%; right:6%;  border-width: 0 2px 2px 0; }
+
+    .cam-ph {
+      position: absolute;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 8px;
+      color: #3d444d; font-size: 12px; text-align: center;
+      padding: 1rem;
+    }
+    .cam-ph svg { width: 36px; height: 36px; opacity: .4; }
+
+    /* ── Buttons ──────────────────────────────── */
+    .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+    button {
+      flex: 1; padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; font-family: inherit;
+      background: var(--surface); color: var(--text);
+      transition: background .12s, border-color .12s, opacity .12s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    button svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+    button:disabled { opacity: .3; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+    button.primary:hover:not(:disabled) { background: var(--accentH); }
+    button.danger  { background: #2d1117; border-color: var(--danger); color: var(--dangerH); }
+    button.danger:hover:not(:disabled)  { background: #3d1a1a; }
+    button:not(.primary):not(.danger):hover:not(:disabled) { background: var(--surface2); border-color: var(--muted); }
+
+    /* ── Toast ────────────────────────────────── */
+    #toast {
+      display: none; padding: 10px 14px;
+      border-radius: 6px; font-size: 13px; font-weight: 500;
+      margin-top: 10px; border: 1px solid transparent;
+      line-height: 1.4;
+    }
+    #toast.success { background: #0d2a10; border-color: var(--accent);  color: #3fb950; }
+    #toast.error   { background: #2d1117; border-color: var(--danger);  color: var(--dangerH); }
+    #toast.info    { background: #0d1926; border-color: var(--blue);    color: var(--blueH); }
+    #toast.warn    { background: #271d00; border-color: var(--warn);    color: #e3b341; }
+
+    /* ── Form fields ──────────────────────────── */
+    .field { margin-bottom: 11px; }
+
+    .field-label {
+      display: block; font-size: 11px; font-weight: 600;
+      color: var(--muted); margin-bottom: 5px;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+
+    .input-wrap { position: relative; }
+
+    input[type=text], input[type=number] {
+      width: 100%; padding: 9px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text);
+      font-size: 14px; font-family: inherit; outline: none;
+      transition: border-color .12s;
+    }
+    input:focus         { border-color: var(--blue); }
+    input::placeholder  { color: #3d444d; }
+    input.scanned       { border-color: var(--accent); color: var(--accentH); font-weight: 600; }
+
+    .clear-input {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; padding: 2px; font-size: 16px; line-height: 1;
+      display: none; flex: none; width: auto;
+    }
+    .clear-input:hover { color: var(--text); }
+
+    /* ── Direction toggle ─────────────────────── */
+    .dir-row { display: flex; gap: 8px; }
+
+    .dir-btn {
+      flex: 1; padding: 10px;
+      border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted);
+      font-size: 13px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+      transition: all .12s;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .dir-btn.in  { background: #0d2a10; border-color: var(--accent); color: #3fb950; }
+    .dir-btn.out { background: #2d1117; border-color: var(--danger);  color: var(--dangerH); }
+
+    /* ── Stats bar ────────────────────────────── */
+    .stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px; margin-bottom: .875rem;
+      width: 100%; max-width: 540px;
+    }
+
+    .stat {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 12px 14px;
+      text-align: center;
+    }
+    .stat-num  { font-size: 22px; font-weight: 700; line-height: 1; }
+    .stat-lbl  { font-size: 10px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: .06em; }
+    .stat-num.green { color: var(--accentH); }
+    .stat-num.red   { color: var(--dangerH); }
+    .stat-num.blue  { color: var(--blueH); }
+
+    /* ── Log table ────────────────────────────── */
+    .log-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 12px;
+    }
+    thead th {
+      text-align: left; padding: 7px 10px;
+      font-size: 10px; font-weight: 600;
+      color: var(--muted); text-transform: uppercase;
+      letter-spacing: .07em;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid #1c2128; transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 8px 10px; color: var(--text); vertical-align: middle; }
+
+    .tag {
+      display: inline-block; padding: 2px 7px;
+      border-radius: 999px; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .tag.in  { background: #0d2a10; color: #3fb950; border: 1px solid var(--accent); }
+    .tag.out { background: #2d1117; color: var(--dangerH); border: 1px solid var(--danger); }
+
+    .empty-row td {
+      text-align: center; color: #3d444d;
+      padding: 2rem; font-size: 12px;
+    }
+
+    /* ── Export bar ───────────────────────────── */
+    .export-bar {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+
+    /* ── Bottom nav (tabs) ────────────────────── */
+    .tabs {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      z-index: 100;
+    }
+
+    .tab {
+      flex: 1; padding: 10px 8px 12px;
+      border: none; background: none;
+      color: var(--muted); font-size: 10px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      text-transform: uppercase; letter-spacing: .06em;
+      transition: color .15s;
+      border-radius: 0;
+    }
+    .tab svg { width: 20px; height: 20px; fill: currentColor; }
+    .tab.active { color: var(--accentH); }
+
+    /* ── Panels ───────────────────────────────── */
+    .panel { display: none; width: 100%; }
+    .panel.active { display: contents; }
+
+    /* ── Divider ──────────────────────────────── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════ -->
+<header>
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M3 5h2V3H3v2zm0 8h2v-2H3v2zm0 8h2v-2H3v2zm4-16h2V3H7v2zm0 8h2v-2H7v2zm0 8h2v-2H7v2zm4-16h2V3h-2v2zm0 8h2v-2h-2v2zm0 8h2v-2h-2v2zm4 0h2v-2h-2v2zm0-8h2v-2h-2v2zm0-8h2V3h-2v2z"/></svg>
+    </div>
+    <div>
+      <h1>Inventory Scanner</h1>
+      <p>Sireletsa Inventory Tracker</p>
+    </div>
+  </div>
+  <span class="badge" id="offlineBadge">● Offline ready</span>
+</header>
+
+<!-- ═══ STATS ════════════════════════════════════════════ -->
+<div class="stats">
+  <div class="stat"><div class="stat-num blue" id="statTotal">0</div><div class="stat-lbl">Total scans</div></div>
+  <div class="stat"><div class="stat-num green" id="statIn">0</div><div class="stat-lbl">Stock in</div></div>
+  <div class="stat"><div class="stat-num red" id="statOut">0</div><div class="stat-lbl">Stock out</div></div>
+</div>
+
+<!-- ═══ SCAN PANEL ═══════════════════════════════════════ -->
+<div class="panel active" id="panelScan">
+
+  <!-- Camera card -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="dot" id="camDot"></span>
+      Camera
+    </div>
+    <div class="card-body">
+      <div class="vid-wrap">
+        <div class="cam-ph" id="camPh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <rect x="2" y="6" width="20" height="12" rx="2"/>
+            <path d="M8 6V4h8v2"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>Tap "Start camera" to begin scanning</span>
+        </div>
+        <video id="video" autoplay playsinline muted></video>
+        <div class="scan-line" id="scanLine"></div>
+        <div class="corners" id="corners"><span></span></div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="startBtn">
+          <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm3.25 7.75l-4.5 2.5A.75.75 0 015.5 10.5v-5a.75.75 0 011.25-.55l4.5 2.5a.75.75 0 010 1.3z"/></svg>
+          Start camera
+        </button>
+        <button id="stopBtn" disabled>
+          <svg viewBox="0 0 16 16"><path d="M4 4h8v8H4z"/></svg>
+          Stop
+        </button>
+        <button id="switchBtn" disabled>
+          <svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zM1 8a7 7 0 1114 0A7 7 0 011 8zm7-3.5v7m-3.5-3.5h7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+          Flip
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry card -->
+  <div class="card">
+    <div class="card-hdr">Log entry</div>
+    <div class="card-body">
+
+      <div class="field">
+        <label class="field-label">Barcode / QR code ID</label>
+        <div class="input-wrap">
+          <input type="text" id="barcodeInput" placeholder="Scan or type item ID…" autocomplete="off" inputmode="numeric">
+          <button class="clear-input" id="clearBarcode" tabindex="-1">×</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Quantity</label>
+        <input type="number" id="quantityInput" placeholder="e.g. 10" min="1" inputmode="numeric">
+      </div>
+
+      <div class="field">
+        <label class="field-label">Direction</label>
+        <div class="dir-row">
+          <button class="dir-btn" id="inBtn"  onclick="selectDir('in')">▲ &nbsp;In</button>
+          <button class="dir-btn" id="outBtn" onclick="selectDir('out')">▼ &nbsp;Out</button>
+        </div>
+      </div>
+
+      <div id="toast"></div>
+
+      <hr>
+
+      <div class="btn-row">
+        <button class="primary" id="logBtn" onclick="logEntry()">
+          <svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zm.75 3.75a.75.75 0 00-1.5 0v3.5l-1.72-1.72a.75.75 0 00-1.06 1.06l3 3a.75.75 0 001.06 0l3-3a.75.75 0 10-1.06-1.06L8.75 9.25v-3.5z"/></svg>
+          Save entry
+        </button>
+        <button onclick="resetForm()">Clear</button>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /panelScan -->
+
+<!-- ═══ LOG PANEL ════════════════════════════════════════ -->
+<div class="panel" id="panelLog">
+
+  <div class="card">
+    <div class="card-hdr">Scan history</div>
+    <div class="card-body">
+      <div class="log-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Item ID</th>
+              <th>Qty</th>
+              <th>Dir</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr class="empty-row"><td colspan="5">No entries yet — start scanning to build your log.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="export-bar">
+        <button class="primary" onclick="exportCSV()">
+          <svg viewBox="0 0 16 16"><path d="M2.75 14A1.75 1.75 0 011 12.25v-2.5a.75.75 0 011.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 00.25-.25v-2.5a.75.75 0 011.5 0v2.5A1.75 1.75 0 0113.25 14H2.75zm5.03-8.53a.75.75 0 00-1.06 0L4.22 7.97a.75.75 0 001.06 1.06l1.97-1.97v6.19a.75.75 0 001.5 0V7.06l1.97 1.97a.75.75 0 101.06-1.06L7.78 5.47z"/></svg>
+          Export CSV
+        </button>
+        <button class="danger" onclick="confirmClear()">
+          <svg viewBox="0 0 16 16"><path d="M11 1.75V3h2.25a.75.75 0 010 1.5H2.75a.75.75 0 010-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM6.5 1.75v1.25h3V1.75a.25.25 0 00-.25-.25h-2.5a.25.25 0 00-.25.25zM4.997 6.5a.75.75 0 10-1.493.144L4.916 13h6.168l1.412-6.356a.75.75 0 10-1.463-.325L9.645 12.5H6.355l-.857-5.856a.75.75 0 00-.501-.644z"/></svg>
+          Clear log
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /panelLog -->
+
+<!-- ═══ HOW TO IMPORT PANEL ═══════════════════════════════ -->
+<div class="panel" id="panelHelp">
+  <div class="card">
+    <div class="card-hdr">How to import into Excel</div>
+    <div class="card-body">
+
+      <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;line-height:1.6;color:var(--muted)">
+
+        <div>
+          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 1 — Export the CSV</div>
+          Go to the <strong style="color:var(--text)">Log</strong> tab and tap <strong style="color:var(--accentH)">Export CSV</strong>. A file called <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;color:var(--blueH)">inventory_log.csv</code> will download to your tablet.
+        </div>
+
+        <div>
+          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 2 — Transfer the file to your PC</div>
+          Options (any one will work):
+          <ul style="margin-top:6px;padding-left:1rem;display:flex;flex-direction:column;gap:4px">
+            <li>Email it to yourself as an attachment</li>
+            <li>Save it to Google Drive / OneDrive / Dropbox</li>
+            <li>Connect tablet via USB and copy the file across</li>
+            <li>WhatsApp it to yourself</li>
+          </ul>
+        </div>
+
+        <div>
+          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 3 — Open in Excel</div>
+          Double-click the <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;color:var(--blueH)">.csv</code> file — Excel opens it automatically. If it doesn't look right, go to <strong style="color:var(--text)">Data → From Text/CSV</strong> and import it manually.
+        </div>
+
+        <div>
+          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 4 — Apply the changes to your master tracker</div>
+          The CSV has columns: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;color:var(--blueH)">Timestamp, Item ID, Quantity, Direction</code>.
+          <br><br>
+          Use Excel's <strong style="color:var(--text)">VLOOKUP</strong> or <strong style="color:var(--text)">XLOOKUP</strong> to match Item IDs from the CSV against your master tracker and update the In/Out columns accordingly. Or paste the CSV data into a new sheet and update manually.
+        </div>
+
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px;font-size:12px;">
+          <div style="color:var(--warn);font-weight:600;margin-bottom:4px">⚠ Important</div>
+          Tap <strong style="color:var(--text)">Clear log</strong> on the Log tab <em>after</em> you have imported the CSV into Excel. This prevents the same entries from being counted twice next time you export.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div><!-- /panelHelp -->
+
+<!-- ═══ BOTTOM TABS ═══════════════════════════════════════ -->
+<nav class="tabs">
+  <button class="tab active" id="tabScan" onclick="switchTab('Scan')">
+    <svg viewBox="0 0 24 24"><path d="M4 4h4v4H4zm0 8h4v4H4zm8-8h4v4h-4zm0 8h4v4h-4zM2 2h8v8H2zm0 12h8v8H2zm12-12h8v8h-8zm0 12h8v8h-8zM4 6h4M4 18h4M16 6h4M16 18h4M6 4v4M18 4v4M6 16v4M18 16v4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    Scan
+  </button>
+  <button class="tab" id="tabLog" onclick="switchTab('Log')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+    Log
+  </button>
+  <button class="tab" id="tabHelp" onclick="switchTab('Help')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+    How to import
+  </button>
+</nav>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const STORAGE_KEY = 'sireletsa_inventory_log';
+let entries    = loadEntries();
+let selectedDir = null;
+let codeReader  = null;
+
+// ══════════════════════════════════════════════════════════
+// PERSISTENCE  (localStorage keeps data between sessions)
+// ══════════════════════════════════════════════════════════
+function loadEntries() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch { return []; }
+}
+
+function saveEntries() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+// ══════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════
+function switchTab(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel' + name).classList.add('active');
+  document.getElementById('tab'   + name).classList.add('active');
+  if (name === 'Log') renderLog();
+}
+
+// ══════════════════════════════════════════════════════════
+// CAMERA
+// ══════════════════════════════════════════════════════════
+const video    = document.getElementById('video');
+const scanLine = document.getElementById('scanLine');
+const corners  = document.getElementById('corners');
+const camPh    = document.getElementById('camPh');
+const camDot   = document.getElementById('camDot');
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const switchBtn= document.getElementById('switchBtn');
+
+async function startCamera() {
+  showToast('Starting camera…', 'info');
+  try {
+    if (typeof ZXing === 'undefined') {
+      showToast('Scanner library not loaded. Connect to the internet once to load it, then go offline.', 'error');
+      return;
+    }
+
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+
+    if (!devices.length) { showToast('No camera found on this device.', 'error'); return; }
+
+    // Prefer rear/environment camera for barcode scanning
+    const rear = devices.find(d => /back|rear|environment/i.test(d.label));
+    const deviceId = rear ? rear.deviceId : devices[0].deviceId;
+
+    await codeReader.decodeFromVideoDevice(deviceId, 'video', (result) => {
+      if (result) {
+        const code = result.getText();
+        const inp  = document.getElementById('barcodeInput');
+        inp.value  = code;
+        inp.classList.add('scanned');
+        document.getElementById('clearBarcode').style.display = 'block';
+        showToast(`✓ Scanned: ${code}`, 'success');
+        // vibrate on scan if supported
+        if (navigator.vibrate) navigator.vibrate(80);
+        document.getElementById('quantityInput').focus();
+      }
+    });
+
+    camPh.style.display    = 'none';
+    scanLine.style.display = 'block';
+    corners.style.display  = 'block';
+    camDot.classList.add('on');
+    startBtn.disabled  = true;
+    stopBtn.disabled   = false;
+    switchBtn.disabled = false;
+    showToast('Camera active — point at a barcode or QR code', 'success');
+
+  } catch (err) {
+    let msg = 'Could not access camera.';
+    if (err.name === 'NotAllowedError')  msg = 'Camera permission denied — tap your browser address bar and allow camera access.';
+    if (err.name === 'NotFoundError')    msg = 'No camera found on this device.';
+    if (err.name === 'NotReadableError') msg = 'Camera is in use by another app — close other apps and try again.';
+    showToast(msg, 'error');
+  }
+}
+
+function stopCamera() {
+  if (codeReader) { codeReader.reset(); codeReader = null; }
+  camPh.style.display    = 'flex';
+  scanLine.style.display = 'none';
+  corners.style.display  = 'none';
+  camDot.classList.remove('on');
+  startBtn.disabled  = false;
+  stopBtn.disabled   = true;
+  switchBtn.disabled = true;
+  showToast('Camera stopped.', 'info');
+}
+
+async function switchCamera() { stopCamera(); await startCamera(); }
+
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click',  stopCamera);
+switchBtn.addEventListener('click',switchCamera);
+
+// ══════════════════════════════════════════════════════════
+// FORM
+// ══════════════════════════════════════════════════════════
+function selectDir(dir) {
+  selectedDir = dir;
+  document.getElementById('inBtn').className  = 'dir-btn' + (dir === 'in'  ? ' in'  : '');
+  document.getElementById('outBtn').className = 'dir-btn' + (dir === 'out' ? ' out' : '');
+}
+
+function logEntry() {
+  const barcode  = document.getElementById('barcodeInput').value.trim();
+  const quantity = document.getElementById('quantityInput').value.trim();
+
+  if (!barcode)                            { showToast('Enter or scan an item ID first.', 'error'); return; }
+  if (!quantity || parseInt(quantity) <= 0){ showToast('Enter a valid quantity.', 'error'); return; }
+  if (!selectedDir)                        { showToast('Select In or Out.', 'error'); return; }
+
+  const entry = {
+    id:        Date.now(),
+    timestamp: new Date().toISOString(),
+    itemId:    barcode,
+    quantity:  parseInt(quantity),
+    direction: selectedDir
+  };
+
+  entries.unshift(entry); // newest first
+  saveEntries();
+  updateStats();
+
+  const dirLabel = selectedDir === 'in' ? '▲ In' : '▼ Out';
+  showToast(`✓ Saved — ID ${barcode}: ${quantity} ${dirLabel}`, 'success');
+  resetForm();
+}
+
+function resetForm() {
+  const inp = document.getElementById('barcodeInput');
+  inp.value = '';
+  inp.classList.remove('scanned');
+  document.getElementById('clearBarcode').style.display = 'none';
+  document.getElementById('quantityInput').value = '';
+  selectedDir = null;
+  document.getElementById('inBtn').className  = 'dir-btn';
+  document.getElementById('outBtn').className = 'dir-btn';
+}
+
+// clear-X button inside barcode field
+document.getElementById('clearBarcode').addEventListener('click', () => {
+  const inp = document.getElementById('barcodeInput');
+  inp.value = '';
+  inp.classList.remove('scanned');
+  document.getElementById('clearBarcode').style.display = 'none';
+  inp.focus();
+});
+
+document.getElementById('barcodeInput').addEventListener('input', function() {
+  this.classList.toggle('scanned', this.value.length > 0);
+  document.getElementById('clearBarcode').style.display = this.value ? 'block' : 'none';
+});
+
+// ══════════════════════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════════════════════
+function updateStats() {
+  const totalIn  = entries.filter(e => e.direction === 'in').reduce((s, e) => s + e.quantity, 0);
+  const totalOut = entries.filter(e => e.direction === 'out').reduce((s, e) => s + e.quantity, 0);
+  document.getElementById('statTotal').textContent = entries.length;
+  document.getElementById('statIn').textContent    = totalIn;
+  document.getElementById('statOut').textContent   = totalOut;
+}
+
+// ══════════════════════════════════════════════════════════
+// LOG TABLE
+// ══════════════════════════════════════════════════════════
+function renderLog() {
+  const tbody = document.getElementById('logBody');
+
+  if (!entries.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No entries yet — start scanning to build your log.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = entries.map(e => {
+    const d   = new Date(e.timestamp);
+    const time = d.toLocaleDateString('en-ZA', {day:'2-digit', month:'short'}) + ' '
+               + d.toLocaleTimeString('en-ZA', {hour:'2-digit', minute:'2-digit'});
+    const tag  = `<span class="tag ${e.direction}">${e.direction === 'in' ? '▲ In' : '▼ Out'}</span>`;
+    return `<tr>
+      <td>${time}</td>
+      <td><strong>${e.itemId}</strong></td>
+      <td>${e.quantity}</td>
+      <td>${tag}</td>
+      <td><button onclick="deleteEntry(${e.id})" style="flex:none;width:auto;padding:3px 8px;font-size:11px;color:var(--dangerH);border-color:var(--danger);background:#2d1117">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function deleteEntry(id) {
+  entries = entries.filter(e => e.id !== id);
+  saveEntries();
+  updateStats();
+  renderLog();
+}
+
+function confirmClear() {
+  if (entries.length === 0) { showToast('Log is already empty.', 'info'); return; }
+  if (confirm(`Clear all ${entries.length} entries? Make sure you have exported the CSV first.`)) {
+    entries = [];
+    saveEntries();
+    updateStats();
+    renderLog();
+    showToast('Log cleared.', 'info');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// CSV EXPORT
+// ══════════════════════════════════════════════════════════
+function exportCSV() {
+  if (!entries.length) { showToast('Nothing to export yet.', 'warn'); return; }
+
+  const header = 'Timestamp,Item ID,Quantity,Direction\n';
+  const rows   = entries.map(e =>
+    `"${e.timestamp}","${e.itemId}",${e.quantity},"${e.direction}"`
+  ).join('\n');
+
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+
+  const now  = new Date();
+  const date = now.toISOString().slice(0, 10);
+  a.href     = url;
+  a.download = `inventory_log_${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  showToast(`✓ Exported ${entries.length} entries as CSV`, 'success');
+}
+
+// ══════════════════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════════════════
+let toastTimer = null;
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent   = msg;
+  t.className     = type;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  if (type === 'success') {
+    toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+updateStats();
+</script>
+</body>
+</html>
