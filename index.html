@@ -155,19 +155,21 @@
     button.primary:hover:not(:disabled) { background: var(--accentH); }
     button.danger  { background: #2d1117; border-color: var(--danger); color: var(--dangerH); }
     button.danger:hover:not(:disabled)  { background: #3d1a1a; }
-    button:not(.primary):not(.danger):hover:not(:disabled) { background: var(--surface2); border-color: var(--muted); }
+    button.send    { background: var(--blue); border-color: transparent; color: #fff; width: 100%; }
+    button.send:hover:not(:disabled) { background: #388bfd; }
+    button:not(.primary):not(.danger):not(.send):hover:not(:disabled) { background: var(--surface2); border-color: var(--muted); }
 
     /* ── Toast ────────────────────────────────── */
-    #toast {
+    .toast {
       display: none; padding: 10px 14px;
       border-radius: 6px; font-size: 13px; font-weight: 500;
       margin-top: 10px; border: 1px solid transparent;
       line-height: 1.4;
     }
-    #toast.success { background: #0d2a10; border-color: var(--accent);  color: #3fb950; }
-    #toast.error   { background: #2d1117; border-color: var(--danger);  color: var(--dangerH); }
-    #toast.info    { background: #0d1926; border-color: var(--blue);    color: var(--blueH); }
-    #toast.warn    { background: #271d00; border-color: var(--warn);    color: #e3b341; }
+    .toast.success { background: #0d2a10; border-color: var(--accent);  color: #3fb950; }
+    .toast.error   { background: #2d1117; border-color: var(--danger);  color: var(--dangerH); }
+    .toast.info    { background: #0d1926; border-color: var(--blue);    color: var(--blueH); }
+    .toast.warn    { background: #271d00; border-color: var(--warn);    color: #e3b341; }
 
     /* ── Form fields ──────────────────────────── */
     .field { margin-bottom: 11px; }
@@ -180,7 +182,7 @@
 
     .input-wrap { position: relative; }
 
-    input[type=text], input[type=number] {
+    input[type=text], input[type=number], input[type=email] {
       width: 100%; padding: 9px 12px;
       background: var(--bg); border: 1px solid var(--border);
       border-radius: 6px; color: var(--text);
@@ -387,7 +389,7 @@
         </div>
       </div>
 
-      <div id="toast"></div>
+      <div id="toast" class="toast"></div>
 
       <hr>
 
@@ -441,6 +443,22 @@
     </div>
   </div>
 
+  <!-- Send by email card -->
+  <div class="card">
+    <div class="card-hdr">Send by email</div>
+    <div class="card-body">
+      <div class="field">
+        <label class="field-label" for="emailInput">Recipient email</label>
+        <input type="email" id="emailInput" placeholder="name@company.co.za" autocomplete="email" inputmode="email">
+      </div>
+      <button class="send" id="sendBtn" onclick="sendCSV()">
+        <svg viewBox="0 0 16 16"><path d="M1.72 1.05a.75.75 0 01.8-.1l12.5 6.25a.75.75 0 010 1.34L2.52 14.79a.75.75 0 01-1.04-.86L2.88 8 1.48 2.07a.75.75 0 01.24-1.02zM4.2 8.75l-.9 3.86L12.1 8 3.3 3.39l.9 3.86h4.05a.75.75 0 010 1.5H4.2z"/></svg>
+        Send CSV
+      </button>
+      <div id="logToast" class="toast"></div>
+    </div>
+  </div>
+
 </div><!-- /panelLog -->
 
 <!-- ═══ HOW TO IMPORT PANEL ═══════════════════════════════ -->
@@ -452,13 +470,13 @@
       <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;line-height:1.6;color:var(--muted)">
 
         <div>
-          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 1 — Export the CSV</div>
-          Go to the <strong style="color:var(--text)">Log</strong> tab and tap <strong style="color:var(--accentH)">Export CSV</strong>. A file called <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;color:var(--blueH)">inventory_log.csv</code> will download to your tablet.
+          <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 1 — Export or send the CSV</div>
+          Go to the <strong style="color:var(--text)">Log</strong> tab and tap <strong style="color:var(--accentH)">Export CSV</strong> to download it, or enter an email address and tap <strong style="color:var(--blueH)">Send CSV</strong> to email it straight to your PC.
         </div>
 
         <div>
           <div style="color:var(--text);font-weight:600;margin-bottom:4px">Step 2 — Transfer the file to your PC</div>
-          Options (any one will work):
+          If you used Send CSV, just open the email on your PC. Otherwise, any one of these works:
           <ul style="margin-top:6px;padding-left:1rem;display:flex;flex-direction:column;gap:4px">
             <li>Email it to yourself as an attachment</li>
             <li>Save it to Google Drive / OneDrive / Dropbox</li>
@@ -481,7 +499,7 @@
 
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px;font-size:12px;">
           <div style="color:var(--warn);font-weight:600;margin-bottom:4px">⚠ Important</div>
-          Tap <strong style="color:var(--text)">Clear log</strong> on the Log tab <em>after</em> you have imported the CSV into Excel. This prevents the same entries from being counted twice next time you export.
+          Tap <strong style="color:var(--text)">Clear log</strong> on the Log tab <em>after</em> you have imported the CSV into Excel. This prevents the same entries from being counted twice next time you export. After a successful send, the app offers to clear the sent entries for you.
         </div>
 
       </div>
@@ -507,9 +525,20 @@
 
 <script>
 // ══════════════════════════════════════════════════════════
+// EMAIL SENDING CONFIG
+// Paste your Google Apps Script web app URL here (see Code.gs).
+// SEND_KEY must match SECRET in Code.gs.
+// If SEND_ENDPOINT is left empty, "Send CSV" falls back to the
+// device share sheet (pick Gmail/Outlook and send manually).
+// ══════════════════════════════════════════════════════════
+const SEND_ENDPOINT = '';
+const SEND_KEY      = 'change-me';
+
+// ══════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════
 const STORAGE_KEY = 'sireletsa_inventory_log';
+const EMAIL_KEY   = 'sireletsa_send_email';
 let entries    = loadEntries();
 let selectedDir = null;
 let codeReader  = null;
@@ -679,9 +708,14 @@ document.getElementById('barcodeInput').addEventListener('input', function() {
 // ══════════════════════════════════════════════════════════
 // STATS
 // ══════════════════════════════════════════════════════════
-function updateStats() {
+function getTotals() {
   const totalIn  = entries.filter(e => e.direction === 'in').reduce((s, e) => s + e.quantity, 0);
   const totalOut = entries.filter(e => e.direction === 'out').reduce((s, e) => s + e.quantity, 0);
+  return { totalIn, totalOut };
+}
+
+function updateStats() {
+  const { totalIn, totalOut } = getTotals();
   document.getElementById('statTotal').textContent = entries.length;
   document.getElementById('statIn').textContent    = totalIn;
   document.getElementById('statOut').textContent   = totalOut;
@@ -690,6 +724,10 @@ function updateStats() {
 // ══════════════════════════════════════════════════════════
 // LOG TABLE
 // ══════════════════════════════════════════════════════════
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function renderLog() {
   const tbody = document.getElementById('logBody');
 
@@ -705,7 +743,7 @@ function renderLog() {
     const tag  = `<span class="tag ${e.direction}">${e.direction === 'in' ? '▲ In' : '▼ Out'}</span>`;
     return `<tr>
       <td>${time}</td>
-      <td><strong>${e.itemId}</strong></td>
+      <td><strong>${escapeHtml(e.itemId)}</strong></td>
       <td>${e.quantity}</td>
       <td>${tag}</td>
       <td><button onclick="deleteEntry(${e.id})" style="flex:none;width:auto;padding:3px 8px;font-size:11px;color:var(--dangerH);border-color:var(--danger);background:#2d1117">✕</button></td>
@@ -721,54 +759,137 @@ function deleteEntry(id) {
 }
 
 function confirmClear() {
-  if (entries.length === 0) { showToast('Log is already empty.', 'info'); return; }
+  if (entries.length === 0) { showToast('Log is already empty.', 'info', 'logToast'); return; }
   if (confirm(`Clear all ${entries.length} entries? Make sure you have exported the CSV first.`)) {
     entries = [];
     saveEntries();
     updateStats();
     renderLog();
-    showToast('Log cleared.', 'info');
+    showToast('Log cleared.', 'info', 'logToast');
   }
 }
 
 // ══════════════════════════════════════════════════════════
-// CSV EXPORT
+// CSV BUILD + EXPORT
 // ══════════════════════════════════════════════════════════
-function exportCSV() {
-  if (!entries.length) { showToast('Nothing to export yet.', 'warn'); return; }
+function csvCell(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }
 
+function buildCSV(list) {
   const header = 'Timestamp,Item ID,Quantity,Direction\n';
-  const rows   = entries.map(e =>
-    `"${e.timestamp}","${e.itemId}",${e.quantity},"${e.direction}"`
+  const rows   = list.map(e =>
+    [csvCell(e.timestamp), csvCell(e.itemId), e.quantity, csvCell(e.direction)].join(',')
   ).join('\n');
+  return header + rows;
+}
 
-  const blob = new Blob([header + rows], { type: 'text/csv' });
+function csvFilename() {
+  return `inventory_log_${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
+function exportCSV() {
+  if (!entries.length) { showToast('Nothing to export yet.', 'warn', 'logToast'); return; }
+
+  const blob = new Blob([buildCSV(entries)], { type: 'text/csv' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-
-  const now  = new Date();
-  const date = now.toISOString().slice(0, 10);
   a.href     = url;
-  a.download = `inventory_log_${date}.csv`;
+  a.download = csvFilename();
   a.click();
   URL.revokeObjectURL(url);
 
-  showToast(`✓ Exported ${entries.length} entries as CSV`, 'success');
+  showToast(`✓ Exported ${entries.length} entries as CSV`, 'success', 'logToast');
+}
+
+// ══════════════════════════════════════════════════════════
+// SEND BY EMAIL
+// ══════════════════════════════════════════════════════════
+const emailInput = document.getElementById('emailInput');
+const sendBtn    = document.getElementById('sendBtn');
+
+try { emailInput.value = localStorage.getItem(EMAIL_KEY) || ''; } catch {}
+emailInput.addEventListener('change', () => {
+  try { localStorage.setItem(EMAIL_KEY, emailInput.value.trim()); } catch {}
+});
+
+function isValidEmail(s) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s); }
+
+async function sendCSV() {
+  if (!entries.length) { showToast('Nothing to send yet — scan some items first.', 'warn', 'logToast'); return; }
+
+  const to = emailInput.value.trim();
+  if (!isValidEmail(to)) { showToast('Enter a valid recipient email address.', 'error', 'logToast'); emailInput.focus(); return; }
+  try { localStorage.setItem(EMAIL_KEY, to); } catch {}
+
+  // Snapshot what is being sent, so entries added mid-send aren't cleared later
+  const sent     = entries.slice();
+  const csv      = buildCSV(sent);
+  const filename = csvFilename();
+
+  if (!SEND_ENDPOINT) { await shareFallback(csv, filename, to); return; }
+
+  if (!navigator.onLine) {
+    showToast("You're offline. Connect to the internet and tap Send CSV again — your log stays saved on this device.", 'warn', 'logToast');
+    return;
+  }
+
+  const { totalIn, totalOut } = getTotals();
+  sendBtn.disabled = true;
+  showToast(`Sending ${sent.length} entries to ${to}…`, 'info', 'logToast');
+
+  try {
+    const res = await fetch(SEND_ENDPOINT, {
+      method: 'POST',
+      // text/plain avoids a CORS preflight, which Apps Script doesn't handle
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ key: SEND_KEY, to, filename, csv, count: sent.length, totalIn, totalOut })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'The server rejected the request');
+
+    showToast(`✓ Sent ${sent.length} entries to ${to}`, 'success', 'logToast');
+
+    if (confirm(`CSV sent to ${to}.\n\nClear the ${sent.length} sent entries now so they aren't sent twice?`)) {
+      const sentIds = new Set(sent.map(e => e.id));
+      entries = entries.filter(e => !sentIds.has(e.id));
+      saveEntries();
+      updateStats();
+      renderLog();
+    }
+  } catch (err) {
+    showToast(`Couldn't send: ${err.message}. Your log is still saved — try again, or use Export CSV.`, 'error', 'logToast');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+// Fallback when no endpoint is configured: open the device share sheet
+async function shareFallback(csv, filename, to) {
+  const file = new File([csv], filename, { type: 'text/csv' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename, text: `Inventory log — send to ${to}` });
+      showToast(`Choose your email app and send to ${to}.`, 'info', 'logToast');
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast(`Couldn't open sharing: ${err.message}`, 'error', 'logToast');
+    }
+  } else {
+    showToast('Automatic email isn’t set up yet (SEND_ENDPOINT is empty) and this browser can’t share files. Use Export CSV instead.', 'warn', 'logToast');
+  }
 }
 
 // ══════════════════════════════════════════════════════════
 // TOAST
 // ══════════════════════════════════════════════════════════
-let toastTimer = null;
+const toastTimers = {};
 
-function showToast(msg, type) {
-  const t = document.getElementById('toast');
+function showToast(msg, type, targetId = 'toast') {
+  const t = document.getElementById(targetId);
   t.textContent   = msg;
-  t.className     = type;
+  t.className     = 'toast ' + type;
   t.style.display = 'block';
-  clearTimeout(toastTimer);
+  clearTimeout(toastTimers[targetId]);
   if (type === 'success') {
-    toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+    toastTimers[targetId] = setTimeout(() => { t.style.display = 'none'; }, 3000);
   }
 }
 
